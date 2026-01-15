@@ -108,7 +108,8 @@ const maturityLevels = [
   { level: 1, name: 'Foundational', description: 'Traditional/Manual' },
   { level: 2, name: 'Emerging', description: 'AI-Augmented' },
   { level: 3, name: 'Strategic', description: 'AI-Integrated' },
-  { level: 4, name: 'Elite', description: 'Agentic/Autonomous' }
+  { level: 4, name: 'Advanced', description: 'Agentic/Autonomous' },
+  { level: 5, name: 'Innovator', description: 'Creator/Product Builder' }
 ];
 
 const initializePracticeData = (practiceId) => {
@@ -194,3 +195,4 @@ const competitors = {
     }
   }
 };
+

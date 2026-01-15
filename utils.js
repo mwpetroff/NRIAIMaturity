@@ -28,17 +28,19 @@ const calculateAFD = (composition) => {
 // Get AFD level based on percentage
 const getAFDLevel = (afd) => {
   if (afd < 20) return 1;
-  if (afd < 51) return 2;
-  if (afd < 86) return 3;
-  return 4;
+  if (afd < 40) return 2;
+  if (afd < 60) return 3;
+  if (afd < 80) return 4;
+  return 5;
 };
 
 // Get DPI level
 const getDPILevel = (dpi) => {
   if (dpi === 0) return 1;
-  if (dpi === 1) return 2;
-  if (dpi === 2) return 3;
-  return 4;
+  if (dpi <= 1) return 2;
+  if (dpi <= 2) return 3;
+  if (dpi <= 4) return 4;
+  return 5;
 };
 
 // Calculate average capability maturity
@@ -92,7 +94,8 @@ const getLevelColor = (level) => {
   if (level === 1) return 'bg-red-500/30 border-red-500 hover:bg-red-500/40';
   if (level === 2) return 'bg-yellow-500/30 border-yellow-500 hover:bg-yellow-500/40';
   if (level === 3) return 'bg-blue-500/40 border-blue-500 hover:bg-blue-500/50';
-  return 'bg-cyan-400/40 border-cyan-400 hover:bg-cyan-400/50';
+  if (level === 4) return 'bg-cyan-400/40 border-cyan-400 hover:bg-cyan-400/50';
+  return 'bg-amber-400/40 border-amber-400 hover:bg-amber-400/50';
 };
 
 // Get gap color
@@ -109,3 +112,4 @@ const getTreemapSizeClass = (teamSize) => {
   if (teamSize > 25) return 'col-span-3 row-span-2';
   return 'col-span-3 row-span-1';
 };
+
