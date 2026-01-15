@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>AI Maturity Assessment - Demo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- React with development build (includes PropTypes) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  
+  <!-- PropTypes required by Recharts -->
+  <script src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
+  
+  <!-- Recharts UMD bundle -->
+  <script src="https://unpkg.com/recharts@2.5.0/umd/Recharts.js"></script>
+
+  <script>
+    // Debug: Check what's available
+    console.log('React loaded:', typeof React !== 'undefined');
+    console.log('ReactDOM loaded:', typeof ReactDOM !== 'undefined');
+    console.log('PropTypes loaded:', typeof PropTypes !== 'undefined');
+    console.log('Recharts loaded:', typeof Recharts !== 'undefined');
+    
+    const e = React.createElement;
+    const { useState } = React;
+    
+    function SimpleDemo() {
+      const [count, setCount] = useState(0);
+      
+      // Only use Recharts if it loaded
+      let chartSection = null;
+      if (typeof Recharts !== 'undefined') {
+        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = Recharts;
+        const chartData = [
+          { name: 'Modern Apps', value: 2.5 },
+          { name: 'Data & AI', value: 3.0 },
+          { name: 'Security', value: 2.8 },
+          { name: 'Cloud', value: 3.2 }
+        ];
+        
+        chartSection = e('div', { className: 'bg-slate-800 rounded-lg p-6 mb-6' },
+          e('h2', { className: 'text-2xl text-cyan-400 mb-4' }, 'Sample Chart'),
+          e(ResponsiveContainer, { width: '100%', height: 200 },
+            e(BarChart, { data: chartData },
+              e(CartesianGrid, { strokeDasharray: '3 3', stroke: '#334155' }),
+              e(XAxis, { dataKey: 'name', stroke: '#94a3b8' }),
+              e(YAxis, { stroke: '#94a3b8' }),
+              e(Tooltip, { contentStyle: { backgroundColor: '#1e293b', border: '1px solid #334155' } }),
+              e(Bar, { dataKey: 'value', fill: '#06b6d4' })
+            )
+          )
+        );
+      }
+      
+      return e('div', { className: 'min-h-screen bg-gradient-to-br from-slate-950 to-blue-950 p-8' },
+        e('div', { className: 'max-w-4xl mx-auto' },
+          e('div', { className: 'bg-slate-900 rounded-xl shadow-2xl p-8 border border-cyan-500/30' },
+            
+            e('h1', { className: 'text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 mb-4' },
+              '🎯 AI Maturity Assessment Tool'
+            ),
+            
+            e('p', { className: 'text-slate-300 mb-6' },
+              'React is working! Click the button to test interactivity.'
+            ),
+            
+            e('div', { className: 'bg-slate-800 rounded-lg p-6 mb-6' },
+              e('h2', { className: 'text-2xl text-cyan-400 mb-4' }, 'Interactive Test'),
+              e('button', {
+                onClick: () => setCount(count + 1),
+                className: 'bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition cursor-pointer'
+              }, 'Click me! Count: ' + count)
+            ),
+            
+            chartSection,
+            
+            e('div', { className: 'mt-6 p-4 border rounded-lg', 
+                style: { backgroundColor: typeof Recharts !== 'undefined' ? 'rgba(6, 78, 59, 0.3)' : 'rgba(127, 29, 29, 0.3)',
+                         borderColor: typeof Recharts !== 'undefined' ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)' } },
+              e('p', { style: { color: typeof Recharts !== 'undefined' ? '#4ade80' : '#f87171', fontWeight: 'bold' } }, 
+                typeof Recharts !== 'undefined' ? '✓ All libraries loaded!' : '✗ Recharts failed to load'),
+              e('p', { className: 'text-slate-300 text-sm mt-2' },
+                'Check browser console (F12) for details.'
+              )
+            )
+          )
+        )
+      );
+    }
+    
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(e(SimpleDemo));
+  </script>
+</body>
+</html>

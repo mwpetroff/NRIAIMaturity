@@ -1,0 +1,849 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Adoption Maturity Assessment</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
+  <script src="https://unpkg.com/recharts@2.5.0/umd/Recharts.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="data.js"></script>
+  <script src="utils.js"></script>
+</head>
+<body class="bg-slate-950">
+  <div id="root"></div>
+  <script>
+    const { useState } = React;
+    const { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, 
+            Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, 
+            CartesianGrid, Tooltip } = Recharts;
+    const e = React.createElement;
+
+    function AIMaturityAssessment() {
+      const [activeTab, setActiveTab] = useState('overview');
+      const [selectedPractice, setSelectedPractice] = useState('modern-apps');
+      const [viewMode, setViewMode] = useState('all');
+      const [practicesData, setPracticesData] = useState(initialPracticesData);
+      const [leadershipGoals, setLeadershipGoals] = useState(initialLeadershipGoals);
+      const [showCompetitor, setShowCompetitor] = useState(false);
+      const [selectedCompetitor, setSelectedCompetitor] = useState('competitor-a');
+      const [streamMetric, setStreamMetric] = useState('capability');
+      const [sortBy, setSortBy] = useState('name');
+      const [sortOrder, setSortOrder] = useState('asc');
+      const [filterLevel, setFilterLevel] = useState('all');
+
+      const overallMetrics = getOverallMetrics(practicesData);
+      const treemapData = getTreemapData(practicesData);
+      const currentFramework = practiceFrameworks[selectedPractice];
+      const currentData = practicesData[selectedPractice];
+      const currentPracticeMetrics = getPracticeMetrics(selectedPractice, practicesData);
+
+      // Update capability function
+      const updateCapability = (practiceId, stage, level) => {
+        setPracticesData(prev => ({
+          ...prev,
+          [practiceId]: {
+            ...prev[practiceId],
+            capability: { ...prev[practiceId].capability, [stage]: level }
+          }
+        }));
+      };
+
+      const updateTargetCapability = (practiceId, stage, level) => {
+        setPracticesData(prev => ({
+          ...prev,
+          [practiceId]: {
+            ...prev[practiceId],
+            targetCapability: { ...prev[practiceId].targetCapability, [stage]: level }
+          }
+        }));
+      };
+
+      const updateTeamComposition = (practiceId, level, count) => {
+        const newComposition = { ...practicesData[practiceId].teamComposition, [level]: parseInt(count) || 0 };
+        const newTeamSize = Object.values(newComposition).reduce((a, b) => a + b, 0);
+        setPracticesData(prev => ({
+          ...prev,
+          [practiceId]: { ...prev[practiceId], teamComposition: newComposition, teamSize: newTeamSize }
+        }));
+      };
+
+      const updateDPI = (practiceId, count) => {
+        setPracticesData(prev => ({
+          ...prev,
+          [practiceId]: { ...prev[practiceId], dpi: parseInt(count) || 0 }
+        }));
+      };
+
+      // Radar chart data
+      const radarData = currentFramework.stages.map(stage => ({
+        stage: stage.name,
+        current: currentData.capability[stage.id],
+        target: currentData.targetCapability[stage.id],
+        fullMark: 4
+      }));
+
+      // Stream data for evolution chart
+      const generateStreamData = () => {
+        const months = [];
+        const baseDate = new Date('2026-01-14');
+        const endDate = new Date('2027-06-30');
+        for (let d = new Date(baseDate); d <= endDate; d.setMonth(d.getMonth() + 1)) {
+          const monthData = {
+            month: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+          };
+          practices.forEach((practice, idx) => {
+            const metrics = getPracticeMetrics(practice.id, practicesData);
+            const practiceDataItem = practicesData[practice.id];
+            const targetDate = new Date(practiceDataItem.targetDate);
+            const progress = Math.min(1, Math.max(0, (d - baseDate) / (targetDate - baseDate)));
+            if (streamMetric === 'capability') {
+              monthData[practice.id] = parseFloat((metrics.avgCapability + (metrics.targetAvgCapability - metrics.avgCapability) * progress).toFixed(2));
+            } else if (streamMetric === 'afd') {
+              monthData[practice.id] = parseFloat((metrics.afd + (75 - metrics.afd) * progress).toFixed(2));
+            } else {
+              monthData[practice.id] = Math.round(metrics.dpi + (metrics.targetDpi - metrics.dpi) * progress);
+            }
+          });
+          months.push(monthData);
+        }
+        return months;
+      };
+      const streamData = generateStreamData();
+
+      // Comparison data
+      const getComparisonData = () => {
+        let data = treemapData.map(p => ({ ...p, gap: p.targetAvgCapability - p.avgCapability }));
+        if (filterLevel !== 'all') {
+          const level = parseInt(filterLevel);
+          data = data.filter(p => Math.round(p.avgCapability) === level);
+        }
+        data.sort((a, b) => {
+          let aVal, bVal;
+          switch(sortBy) {
+            case 'capability': aVal = a.avgCapability; bVal = b.avgCapability; break;
+            case 'afd': aVal = a.afd; bVal = b.afd; break;
+            case 'dpi': aVal = a.dpi; bVal = b.dpi; break;
+            case 'gap': aVal = a.gap; bVal = b.gap; break;
+            case 'team': aVal = a.teamSize; bVal = b.teamSize; break;
+            default: aVal = a.name; bVal = b.name;
+          }
+          return sortOrder === 'asc' ? (aVal > bVal ? 1 : -1) : (aVal < bVal ? 1 : -1);
+        });
+        return data;
+      };
+      const comparisonData = getComparisonData();
+
+      // Tab button helper
+      const tabBtn = (id, icon, label) => e('button', {
+        key: id,
+        onClick: () => setActiveTab(id),
+        className: 'flex-1 py-3 px-4 rounded-md font-medium transition-all ' +
+          (activeTab === id ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-800')
+      }, icon + ' ' + label);
+
+      // Main render
+      return e('div', { className: 'min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6' },
+        e('div', { className: 'max-w-7xl mx-auto' },
+          // Header
+          e('div', { className: 'mb-8' },
+            e('h1', { className: 'text-4xl font-bold text-white mb-2' }, 'AI Adoption Maturity Assessment'),
+            e('p', { className: 'text-cyan-400' }, '2026 Consultancy Framework - Capability  Consistency  Provenance')
+          ),
+
+          // Navigation Tabs
+          e('div', { className: 'bg-slate-900 rounded-lg shadow-xl mb-6 p-1 flex gap-2 border border-slate-700' },
+            tabBtn('overview', '', 'Overall Dashboard'),
+            tabBtn('compare', '', 'Compare Practices'),
+            tabBtn('practice', '', 'Practice Deep-Dive'),
+            tabBtn('assessment', '', 'Assessment Input'),
+            tabBtn('goals', '', 'Leadership Goals')
+          ),
+
+          // Tab Content
+          activeTab === 'overview' && renderOverviewTab(),
+          activeTab === 'compare' && renderCompareTab(),
+          activeTab === 'practice' && renderPracticeTab(),
+          activeTab === 'assessment' && renderAssessmentTab(),
+          activeTab === 'goals' && renderGoalsTab()
+        )
+      );
+
+      // OVERVIEW TAB
+      function renderOverviewTab() {
+        return e('div', { className: 'space-y-6' },
+          // View Controls & Mini KPIs
+          e('div', { className: 'flex justify-between items-center' },
+            e('div', { className: 'flex gap-3' },
+              e('button', {
+                onClick: () => setViewMode('all'),
+                className: 'px-4 py-2 rounded-lg font-medium transition-all ' +
+                  (viewMode === 'all' ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-700 text-slate-300 hover:bg-slate-600')
+              }, 'All Practices'),
+              e('button', {
+                onClick: () => setViewMode('target'),
+                className: 'px-4 py-2 rounded-lg font-medium transition-all ' +
+                  (viewMode === 'target' ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-700 text-slate-300 hover:bg-slate-600')
+              }, 'Target State'),
+              e('label', { className: 'flex items-center gap-2 pl-3 ml-3 border-l border-slate-600 cursor-pointer' },
+                e('input', { type: 'checkbox', checked: showCompetitor, onChange: (ev) => setShowCompetitor(ev.target.checked), className: 'w-4 h-4 rounded' }),
+                e('span', { className: 'text-slate-300 text-sm' }, 'Show Competitor')
+              )
+            ),
+            e('div', { className: 'flex gap-6 text-sm' },
+              e('div', { className: 'text-center' },
+                e('div', { className: 'text-slate-400 text-xs' }, 'Overall Maturity'),
+                e('div', { className: 'text-2xl font-bold text-cyan-400' }, overallMetrics.avgCapability)
+              ),
+              e('div', { className: 'text-center' },
+                e('div', { className: 'text-slate-400 text-xs' }, 'AI Fluency Density'),
+                e('div', { className: 'text-2xl font-bold text-blue-400' }, overallMetrics.avgAFD + '%')
+              ),
+              e('div', { className: 'text-center' },
+                e('div', { className: 'text-slate-400 text-xs' }, 'Delivery Provenance'),
+                e('div', { className: 'text-2xl font-bold text-purple-400' }, overallMetrics.avgDPI)
+              )
+            )
+          ),
+
+          // Treemap Heatmap
+          e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-2xl p-8 border border-slate-700' },
+            e('div', { className: 'flex justify-between items-center mb-6' },
+              e('h2', { className: 'text-2xl font-bold text-white' }, 'AI Maturity Treemap'),
+              e('div', { className: 'flex flex-wrap gap-4 text-xs' },
+                e('div', { className: 'flex items-center gap-2' },
+                  e('div', { className: 'w-4 h-4 rounded bg-red-500/40 border border-red-500' }),
+                  e('span', { className: 'text-slate-300' }, 'L1: Foundational'),
+                  e('span', { className: 'text-slate-500 hidden lg:inline' }, '(Traditional/Manual)')
+                ),
+                e('div', { className: 'flex items-center gap-2' },
+                  e('div', { className: 'w-4 h-4 rounded bg-yellow-500/40 border border-yellow-500' }),
+                  e('span', { className: 'text-slate-300' }, 'L2: Emerging'),
+                  e('span', { className: 'text-slate-500 hidden lg:inline' }, '(AI-Augmented)')
+                ),
+                e('div', { className: 'flex items-center gap-2' },
+                  e('div', { className: 'w-4 h-4 rounded bg-blue-500/40 border border-blue-500' }),
+                  e('span', { className: 'text-slate-300' }, 'L3: Strategic'),
+                  e('span', { className: 'text-slate-500 hidden lg:inline' }, '(AI-Integrated)')
+                ),
+                e('div', { className: 'flex items-center gap-2' },
+                  e('div', { className: 'w-4 h-4 rounded bg-cyan-400/40 border border-cyan-400' }),
+                  e('span', { className: 'text-slate-300' }, 'L4: Elite'),
+                  e('span', { className: 'text-slate-500 hidden lg:inline' }, '(Agentic/Autonomous)')
+                )
+              )
+            ),
+            // Treemap Grid
+            e('div', { className: 'grid grid-cols-12 gap-2', style: { minHeight: '500px' } },
+              treemapData.map((practice, idx) => {
+                const capLevel = Math.round(viewMode === 'target' ? practice.targetAvgCapability : practice.avgCapability);
+                const gap = practice.targetAvgCapability - practice.avgCapability;
+                const sizeClass = getTreemapSizeClass(practice.teamSize);
+                const competitorData = showCompetitor ? competitors[selectedCompetitor].practiceScores[practice.id] : null;
+                const vsCompetitor = competitorData ? practice.avgCapability - competitorData.capability : 0;
+
+                return e('div', {
+                  key: practice.id,
+                  className: sizeClass + ' rounded-lg border-2 p-4 cursor-pointer transition-all duration-300 transform hover:scale-105 relative ' + getLevelColor(capLevel),
+                  onClick: () => { setSelectedPractice(practice.id); setActiveTab('practice'); }
+                },
+                  // Gap Badge
+                  viewMode !== 'target' && gap > 0.1 && !showCompetitor &&
+                    e('div', { className: 'absolute top-2 right-2 bg-slate-900/80 rounded-full px-2 py-1 border border-slate-600' },
+                      e('span', { className: 'text-xs font-bold ' + getGapColor(gap) }, '-' + gap.toFixed(1)),
+                      e('span', { className: 'text-xs text-slate-400 ml-1' }, 'gap')
+                    ),
+                  // Competitor Badge
+                  showCompetitor && competitorData &&
+                    e('div', { className: 'absolute top-2 right-2 bg-slate-900/80 rounded-full px-2 py-1 border border-slate-600' },
+                      e('span', { className: 'text-xs font-bold ' + (vsCompetitor > 0.5 ? 'text-green-400' : vsCompetitor < -0.5 ? 'text-red-400' : 'text-yellow-400') },
+                        (vsCompetitor > 0 ? '+' : '') + vsCompetitor.toFixed(1)),
+                      e('span', { className: 'text-xs text-slate-400 ml-1' }, 'vs')
+                    ),
+                  e('div', { className: 'h-full flex flex-col justify-between' },
+                    e('div', null,
+                      e('div', { className: 'font-bold text-white text-sm mb-1' }, practice.name),
+                      e('div', { className: 'text-xs text-slate-200' }, 'Team: ' + practice.teamSize)
+                    ),
+                    e('div', { className: 'mt-2' },
+                      e('div', { className: 'flex items-baseline gap-2 mb-1' },
+                        e('div', { className: 'text-2xl font-bold text-white' },
+                          (viewMode === 'target' ? practice.targetAvgCapability : practice.avgCapability).toFixed(1)),
+                        viewMode !== 'target' && gap > 0.1 && !showCompetitor &&
+                          e('div', { className: 'text-sm text-slate-300' }, ' ' + practice.targetAvgCapability.toFixed(1))
+                      ),
+                      e('div', { className: 'text-xs text-slate-200 mb-2' },
+                        'AFD: ' + practice.afd.toFixed(0) + '% | DPI: ' + (viewMode === 'target' ? practice.targetDpi : practice.dpi)),
+                      !showCompetitor && viewMode !== 'target' &&
+                        e('div', { className: 'w-full bg-slate-700/50 rounded-full h-1.5 mt-2' },
+                          e('div', {
+                            className: 'h-1.5 rounded-full transition-all ' +
+                              (gap > 1.5 ? 'bg-red-400' : gap > 0.8 ? 'bg-yellow-400' : gap > 0.3 ? 'bg-blue-400' : 'bg-green-400'),
+                            style: { width: Math.min(100, (practice.avgCapability / practice.targetAvgCapability) * 100) + '%' }
+                          })
+                        )
+                    )
+                  )
+                );
+              })
+            )
+          ),
+
+          // Maturity Evolution Chart
+          e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-2xl p-8 border border-slate-700' },
+            e('div', { className: 'flex justify-between items-center mb-6' },
+              e('h2', { className: 'text-2xl font-bold text-white' }, 'Maturity Evolution Over Time'),
+              e('div', { className: 'flex gap-2' },
+                ['capability', 'afd', 'dpi'].map(metric =>
+                  e('button', {
+                    key: metric,
+                    onClick: () => setStreamMetric(metric),
+                    className: 'px-3 py-1 rounded text-sm transition-all ' +
+                      (streamMetric === metric ? (metric === 'capability' ? 'bg-cyan-500 text-white' : metric === 'afd' ? 'bg-blue-500 text-white' : 'bg-purple-500 text-white') : 'bg-slate-700 text-slate-300 hover:bg-slate-600')
+                  }, metric === 'capability' ? 'Capability' : metric === 'afd' ? 'AFD %' : 'Delivery Provenance')
+                )
+              )
+            ),
+            e(ResponsiveContainer, { width: '100%', height: 400 },
+              e(BarChart, { data: streamData },
+                e(CartesianGrid, { strokeDasharray: '3 3', stroke: '#334155' }),
+                e(XAxis, { dataKey: 'month', stroke: '#94a3b8' }),
+                e(YAxis, { stroke: '#94a3b8' }),
+                e(Tooltip, { contentStyle: { backgroundColor: '#1e293b', border: '1px solid #475569' } }),
+                e(Legend),
+                practices.map((practice, idx) => {
+                  const colors = ['#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1'];
+                  return e(Bar, { key: practice.id, dataKey: practice.id, stackId: 'a', fill: colors[idx % 8], name: practice.name });
+                })
+              )
+            )
+          ),
+
+          // Executive Insights
+          e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-xl p-6 border border-slate-700' },
+            e('h3', { className: 'text-lg font-bold text-white mb-4' }, 'Executive Insights'),
+            e('div', { className: 'space-y-3' },
+              overallMetrics.avgCapability < 3 &&
+                e('div', { className: 'bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 flex gap-3 items-start' },
+                  e('span', { className: 'text-yellow-400 text-lg' }, ''),
+                  e('div', null,
+                    e('div', { className: 'text-sm font-semibold text-yellow-300' }, 'Below Strategic Threshold'),
+                    e('div', { className: 'text-xs text-slate-300 mt-1' }, 'Overall capability maturity (' + overallMetrics.avgCapability + ') is below the Strategic target (3.0)')
+                  )
+                ),
+              overallMetrics.avgAFD < 51 &&
+                e('div', { className: 'bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 flex gap-3 items-start' },
+                  e('span', { className: 'text-blue-400 text-lg' }, ''),
+                  e('div', null,
+                    e('div', { className: 'text-sm font-semibold text-blue-300' }, 'AI Fluency Density Below Strategic'),
+                    e('div', { className: 'text-xs text-slate-300 mt-1' }, 'Average ' + overallMetrics.avgAFD + '% of teams at L3+ level.')
+                  )
+                ),
+              overallMetrics.avgDPI < 3 &&
+                e('div', { className: 'bg-purple-500/10 border border-purple-500/30 rounded-lg p-3 flex gap-3 items-start' },
+                  e('span', { className: 'text-purple-400 text-lg' }, ''),
+                  e('div', null,
+                    e('div', { className: 'text-sm font-semibold text-purple-300' }, 'Build Delivery Provenance Portfolio'),
+                    e('div', { className: 'text-xs text-slate-300 mt-1' }, 'Average of ' + overallMetrics.avgDPI + ' referenceable solutions per practice. Target: 3+ for Elite level.')
+                  )
+                )
+            )
+          )
+        );
+      }
+
+      // COMPARE TAB
+      function renderCompareTab() {
+        return e('div', { className: 'space-y-6' },
+          // Filters
+          e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-md p-6 border border-slate-700' },
+            e('div', { className: 'flex justify-between items-center flex-wrap gap-4' },
+              e('div', null,
+                e('h2', { className: 'text-2xl font-bold text-white mb-1' }, 'Practice Comparison Matrix'),
+                e('p', { className: 'text-slate-400 text-sm' }, 'Compare maturity metrics across all practice areas')
+              ),
+              e('div', { className: 'flex gap-3 items-center' },
+                e('select', {
+                  value: filterLevel,
+                  onChange: (ev) => setFilterLevel(ev.target.value),
+                  className: 'px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm'
+                },
+                  e('option', { value: 'all' }, 'All Levels'),
+                  e('option', { value: '1' }, 'L1 - Foundational'),
+                  e('option', { value: '2' }, 'L2 - Emerging'),
+                  e('option', { value: '3' }, 'L3 - Strategic'),
+                  e('option', { value: '4' }, 'L4 - Elite')
+                ),
+                e('select', {
+                  value: sortBy,
+                  onChange: (ev) => setSortBy(ev.target.value),
+                  className: 'px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm'
+                },
+                  e('option', { value: 'name' }, 'Practice Name'),
+                  e('option', { value: 'capability' }, 'Capability'),
+                  e('option', { value: 'afd' }, 'AFD'),
+                  e('option', { value: 'dpi' }, 'DPI'),
+                  e('option', { value: 'gap' }, 'Gap to Target'),
+                  e('option', { value: 'team' }, 'Team Size')
+                ),
+                e('button', {
+                  onClick: () => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'),
+                  className: 'px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm hover:bg-slate-700'
+                }, sortOrder === 'asc' ? ' Asc' : ' Desc')
+              )
+            )
+          ),
+
+          // Summary Cards
+          e('div', { className: 'grid grid-cols-1 md:grid-cols-4 gap-4' },
+            e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-md p-5 border border-slate-700' },
+              e('div', { className: 'text-xs text-slate-400 mb-1' }, 'Leading Practice'),
+              e('div', { className: 'text-xl font-bold text-cyan-400' }, comparisonData[0]?.name.split(' ')[0] || '-'),
+              e('div', { className: 'text-xs text-slate-300 mt-1' }, 'L' + (comparisonData[0]?.avgCapability.toFixed(1) || '-') + ' Capability')
+            ),
+            e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-md p-5 border border-slate-700' },
+              e('div', { className: 'text-xs text-slate-400 mb-1' }, 'Highest AFD'),
+              e('div', { className: 'text-xl font-bold text-blue-400' }, (comparisonData.sort((a,b) => b.afd - a.afd)[0]?.afd.toFixed(1) || '-') + '%'),
+              e('div', { className: 'text-xs text-slate-300 mt-1' }, comparisonData[0]?.name.split(' ')[0] || '-')
+            ),
+            e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-md p-5 border border-slate-700' },
+              e('div', { className: 'text-xs text-slate-400 mb-1' }, 'Most References'),
+              e('div', { className: 'text-xl font-bold text-purple-400' }, comparisonData.sort((a,b) => b.dpi - a.dpi)[0]?.dpi || '-'),
+              e('div', { className: 'text-xs text-slate-300 mt-1' }, comparisonData[0]?.name.split(' ')[0] + ' (DPI)')
+            ),
+            e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-md p-5 border border-slate-700' },
+              e('div', { className: 'text-xs text-slate-400 mb-1' }, 'Largest Gap'),
+              e('div', { className: 'text-xl font-bold text-red-400' }, '-' + (comparisonData.sort((a,b) => b.gap - a.gap)[0]?.gap.toFixed(1) || '-')),
+              e('div', { className: 'text-xs text-slate-300 mt-1' }, comparisonData[0]?.name.split(' ')[0] || '-')
+            )
+          ),
+
+          // Comparison Table
+          e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-md border border-slate-700 overflow-hidden' },
+            e('div', { className: 'overflow-x-auto' },
+              e('table', { className: 'w-full' },
+                e('thead', { className: 'bg-slate-800/50 border-b border-slate-700' },
+                  e('tr', null,
+                    e('th', { className: 'px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase' }, 'Practice Area'),
+                    e('th', { className: 'px-6 py-4 text-center text-xs font-semibold text-slate-300 uppercase' }, 'Team Size'),
+                    e('th', { className: 'px-6 py-4 text-center text-xs font-semibold text-cyan-400 uppercase' }, 'Capability'),
+                    e('th', { className: 'px-6 py-4 text-center text-xs font-semibold text-blue-400 uppercase' }, 'AFD'),
+                    e('th', { className: 'px-6 py-4 text-center text-xs font-semibold text-purple-400 uppercase' }, 'DPI'),
+                    e('th', { className: 'px-6 py-4 text-center text-xs font-semibold text-slate-300 uppercase' }, 'Gap'),
+                    e('th', { className: 'px-6 py-4 text-center text-xs font-semibold text-slate-300 uppercase' }, 'Status')
+                  )
+                ),
+                e('tbody', { className: 'divide-y divide-slate-700' },
+                  comparisonData.map(practice => {
+                    const capLevel = Math.round(practice.avgCapability);
+                    const isOnTrack = practice.gap < 0.5;
+                    return e('tr', {
+                      key: practice.id,
+                      className: 'hover:bg-slate-800/30 transition-colors cursor-pointer',
+                      onClick: () => { setSelectedPractice(practice.id); setActiveTab('practice'); }
+                    },
+                      e('td', { className: 'px-6 py-4' },
+                        e('div', { className: 'font-semibold text-white' }, practice.name),
+                        e('div', { className: 'text-xs text-slate-400' }, maturityLevels[capLevel - 1]?.name + '  ' + practiceFrameworks[practice.id].stages.length + ' stages')
+                      ),
+                      e('td', { className: 'px-6 py-4 text-center text-white' }, practice.teamSize),
+                      e('td', { className: 'px-6 py-4 text-center' },
+                        e('div', { className: 'text-lg font-bold text-cyan-400' }, practice.avgCapability.toFixed(1)),
+                        e('div', { className: 'text-xs text-slate-400' }, ' ' + practice.targetAvgCapability.toFixed(1))
+                      ),
+                      e('td', { className: 'px-6 py-4 text-center' },
+                        e('div', { className: 'text-lg font-bold text-blue-400' }, practice.afd.toFixed(1) + '%')
+                      ),
+                      e('td', { className: 'px-6 py-4 text-center' },
+                        e('div', { className: 'text-lg font-bold text-purple-400' }, practice.dpi)
+                      ),
+                      e('td', { className: 'px-6 py-4 text-center' },
+                        e('div', { className: 'text-lg font-bold ' + getGapColor(practice.gap) }, '-' + practice.gap.toFixed(1))
+                      ),
+                      e('td', { className: 'px-6 py-4 text-center' },
+                        e('span', {
+                          className: 'px-3 py-1 rounded-full text-xs font-medium ' +
+                            (isOnTrack ? 'bg-green-900/30 text-green-400 border border-green-700' : 'bg-yellow-900/30 text-yellow-400 border border-yellow-700')
+                        }, isOnTrack ? ' On Track' : ' Needs Attention')
+                      )
+                    );
+                  })
+                )
+              )
+            )
+          ),
+
+          // Stage-Level Heatmap
+          e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-md p-6 border border-slate-700' },
+            e('h3', { className: 'text-xl font-bold text-white mb-4' }, 'Stage-Level Maturity Heatmap'),
+            e('p', { className: 'text-slate-400 text-sm mb-6' }, 'Compare current maturity levels across all stages for each practice'),
+            e('div', { className: 'space-y-6' },
+              comparisonData.map(practice => {
+                const framework = practiceFrameworks[practice.id];
+                const pData = practicesData[practice.id];
+                return e('div', { key: practice.id, className: 'mb-6' },
+                  e('div', { className: 'font-semibold text-white mb-3 flex items-center gap-3' },
+                    e('span', null, practice.name),
+                    e('span', { className: 'text-sm text-slate-400' }, '(' + practice.avgCapability.toFixed(1) + ' avg)')
+                  ),
+                  e('div', { className: 'flex gap-2' },
+                    framework.stages.map(stage => {
+                      const level = pData.capability[stage.id];
+                      const target = pData.targetCapability[stage.id];
+                      const color = level === 1 ? 'bg-red-500/40 border-red-500' :
+                                   level === 2 ? 'bg-yellow-500/40 border-yellow-500' :
+                                   level === 3 ? 'bg-blue-500/40 border-blue-500' :
+                                   'bg-cyan-400/40 border-cyan-400';
+                      return e('div', {
+                        key: stage.id,
+                        className: 'flex-1 rounded-lg border-2 p-3 ' + color + ' transition-all hover:scale-105',
+                        title: stage.name + ': L' + level + '  L' + target
+                      },
+                        e('div', { className: 'text-xs text-white font-medium mb-1 truncate' }, stage.name),
+                        e('div', { className: 'text-center' },
+                          e('div', { className: 'text-lg font-bold text-white' }, level),
+                          level < target && e('div', { className: 'text-xs text-slate-200' }, ' ' + target)
+                        )
+                      );
+                    })
+                  )
+                );
+              })
+            )
+          )
+        );
+      }
+
+      // PRACTICE TAB
+      function renderPracticeTab() {
+        return e('div', { className: 'space-y-6' },
+          // Practice Selector
+          e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-md p-6 border border-slate-700' },
+            e('label', { className: 'block text-sm font-medium text-slate-300 mb-2' }, 'Select Practice Area'),
+            e('select', {
+              value: selectedPractice,
+              onChange: (ev) => setSelectedPractice(ev.target.value),
+              className: 'w-full md:w-1/2 px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white'
+            },
+              practices.map(p => e('option', { key: p.id, value: p.id }, p.name))
+            )
+          ),
+
+          // Radar Chart and Details
+          e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-md p-6 border border-slate-700' },
+            e('h2', { className: 'text-2xl font-bold text-white mb-6' }, currentFramework.name + ' - Maturity Assessment'),
+            e('div', { className: 'mb-8' },
+              e('h3', { className: 'text-lg font-semibold text-slate-200 mb-4' }, 'Capability Radar'),
+              e(ResponsiveContainer, { width: '100%', height: 400 },
+                e(RadarChart, { data: radarData },
+                  e(PolarGrid, { stroke: '#475569' }),
+                  e(PolarAngleAxis, { dataKey: 'stage', stroke: '#94a3b8' }),
+                  e(PolarRadiusAxis, { angle: 90, domain: [0, 4], stroke: '#94a3b8' }),
+                  e(Radar, { name: 'Current', dataKey: 'current', stroke: '#06b6d4', fill: '#06b6d4', fillOpacity: 0.6 }),
+                  e(Radar, { name: 'Target', dataKey: 'target', stroke: '#10b981', fill: '#10b981', fillOpacity: 0.3 }),
+                  e(Legend)
+                )
+              )
+            ),
+            // Stage Details
+            e('div', null,
+              e('h3', { className: 'text-lg font-semibold text-slate-200 mb-4' }, 'Stage Details'),
+              e('div', { className: 'space-y-3' },
+                currentFramework.stages.map(stage => {
+                  const current = currentData.capability[stage.id];
+                  const target = currentData.targetCapability[stage.id];
+                  const currentLevel = maturityLevels[current - 1];
+                  return e('div', { key: stage.id, className: 'p-4 bg-slate-800/50 rounded-lg border border-slate-700' },
+                    e('div', { className: 'flex justify-between items-center mb-2' },
+                      e('span', { className: 'font-semibold text-white' }, stage.name),
+                      e('div', { className: 'text-sm' },
+                        e('span', { className: 'text-slate-400' }, 'Current: '),
+                        e('span', { className: 'font-medium text-cyan-400' }, 'L' + current + ' - ' + currentLevel.name),
+                        e('span', { className: 'text-slate-500 mx-2' }, ''),
+                        e('span', { className: 'text-slate-400' }, 'Target: '),
+                        e('span', { className: 'font-medium text-green-400' }, 'L' + target)
+                      )
+                    ),
+                    e('div', { className: 'flex gap-2' },
+                      maturityLevels.map(level =>
+                        e('div', {
+                          key: level.level,
+                          className: 'flex-1 h-2 rounded transition-all ' + (level.level <= current ? 'bg-cyan-500' : 'bg-slate-700')
+                        })
+                      )
+                    )
+                  );
+                })
+              )
+            )
+          ),
+
+          // Team Composition
+          e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-md p-6 border border-slate-700' },
+            e('h3', { className: 'text-lg font-semibold text-slate-200 mb-4' }, 'Team Composition & AFD Analysis'),
+            e('div', { className: 'grid grid-cols-2 md:grid-cols-4 gap-4 mb-4' },
+              [
+                { key: 'l1', label: 'Level 1', color: 'bg-red-900/40 text-red-200 border-red-700' },
+                { key: 'l2', label: 'Level 2', color: 'bg-yellow-900/40 text-yellow-200 border-yellow-700' },
+                { key: 'l3', label: 'Level 3', color: 'bg-blue-900/40 text-blue-200 border-blue-600' },
+                { key: 'l4', label: 'Level 4', color: 'bg-cyan-900/40 text-cyan-200 border-cyan-500' }
+              ].map(item =>
+                e('div', { key: item.key, className: 'p-4 rounded-lg border-2 ' + item.color },
+                  e('div', { className: 'text-sm font-medium' }, item.label),
+                  e('div', { className: 'text-2xl font-bold' }, currentData.teamComposition[item.key])
+                )
+              )
+            ),
+            e('div', { className: 'text-sm text-slate-300' },
+              'Total Team: ' + currentData.teamSize + '  Strategic+ (L3/L4): ' + (currentData.teamComposition.l3 + currentData.teamComposition.l4) + '  AFD: ' + currentPracticeMetrics.afd.toFixed(1) + '%'
+            )
+          )
+        );
+      }
+
+      // ASSESSMENT TAB
+      function renderAssessmentTab() {
+        return e('div', { className: 'space-y-6' },
+          // Practice Selector
+          e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-md p-6 border border-slate-700' },
+            e('label', { className: 'block text-sm font-medium text-slate-300 mb-2' }, 'Select Practice Area to Assess'),
+            e('select', {
+              value: selectedPractice,
+              onChange: (ev) => setSelectedPractice(ev.target.value),
+              className: 'w-full md:w-1/2 px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white'
+            },
+              practices.map(p => e('option', { key: p.id, value: p.id }, p.name))
+            )
+          ),
+
+          // Stage Assessment
+          e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-md p-6 border border-slate-700' },
+            e('h2', { className: 'text-2xl font-bold text-white mb-6' }, currentFramework.name + ' Assessment'),
+            e('div', { className: 'space-y-6' },
+              currentFramework.stages.map(stage =>
+                e('div', { key: stage.id, className: 'border-b border-slate-700 pb-6' },
+                  e('label', { className: 'block font-medium text-slate-200 mb-3' }, stage.name),
+                  // Current Level
+                  e('div', { className: 'mb-4' },
+                    e('div', { className: 'text-sm text-slate-400 mb-2' }, 'Current Level'),
+                    e('div', { className: 'grid grid-cols-2 md:grid-cols-4 gap-2' },
+                      maturityLevels.map(level =>
+                        e('button', {
+                          key: level.level,
+                          onClick: () => updateCapability(selectedPractice, stage.id, level.level),
+                          className: 'p-3 rounded-lg border-2 text-left transition-all ' +
+                            (currentData.capability[stage.id] === level.level
+                              ? 'border-cyan-500 bg-cyan-900/30 shadow-lg'
+                              : 'border-slate-600 bg-slate-800 hover:border-slate-500')
+                        },
+                          e('div', { className: 'font-semibold text-sm text-white' }, 'L' + level.level + ': ' + level.name),
+                          e('div', { className: 'text-xs text-slate-400' }, level.description)
+                        )
+                      )
+                    )
+                  ),
+                  // Target Level
+                  e('div', null,
+                    e('div', { className: 'text-sm text-slate-400 mb-2' }, 'Target Level'),
+                    e('div', { className: 'grid grid-cols-2 md:grid-cols-4 gap-2' },
+                      maturityLevels.map(level =>
+                        e('button', {
+                          key: level.level,
+                          onClick: () => updateTargetCapability(selectedPractice, stage.id, level.level),
+                          className: 'p-3 rounded-lg border-2 text-left transition-all ' +
+                            (currentData.targetCapability[stage.id] === level.level
+                              ? 'border-green-500 bg-green-900/30 shadow-lg'
+                              : 'border-slate-600 bg-slate-800 hover:border-slate-500')
+                        },
+                          e('div', { className: 'font-semibold text-sm text-white' }, 'L' + level.level + ': ' + level.name),
+                          e('div', { className: 'text-xs text-slate-400' }, level.description)
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          ),
+
+          // Team Composition Input
+          e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-md p-6 border border-slate-700' },
+            e('h3', { className: 'text-lg font-semibold text-slate-200 mb-4' }, 'Team Composition'),
+            e('div', { className: 'grid grid-cols-2 md:grid-cols-4 gap-4' },
+              ['l1', 'l2', 'l3', 'l4'].map((level, idx) =>
+                e('div', { key: level },
+                  e('label', { className: 'block text-sm text-slate-400 mb-1' }, 'Level ' + (idx + 1) + ' Members'),
+                  e('input', {
+                    type: 'number',
+                    min: 0,
+                    value: currentData.teamComposition[level],
+                    onChange: (ev) => updateTeamComposition(selectedPractice, level, ev.target.value),
+                    className: 'w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white'
+                  })
+                )
+              )
+            ),
+            e('div', { className: 'mt-4 text-sm text-slate-300' },
+              'Total: ' + currentData.teamSize + ' | AFD: ' + currentPracticeMetrics.afd.toFixed(1) + '%'
+            )
+          ),
+
+          // DPI Input
+          e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-md p-6 border border-slate-700' },
+            e('h3', { className: 'text-lg font-semibold text-slate-200 mb-4' }, 'Delivery Provenance Index'),
+            e('div', { className: 'flex gap-4 items-center' },
+              e('label', { className: 'text-slate-400' }, 'Current DPI:'),
+              e('input', {
+                type: 'number',
+                min: 0,
+                max: 10,
+                value: currentData.dpi,
+                onChange: (ev) => updateDPI(selectedPractice, ev.target.value),
+                className: 'w-24 px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white'
+              }),
+              e('span', { className: 'text-slate-400' }, 'referenceable solutions')
+            )
+          )
+        );
+      }
+
+      // GOALS TAB
+      function renderGoalsTab() {
+        return e('div', { className: 'space-y-6' },
+          // Header
+          e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-md p-6 border border-slate-700' },
+            e('h2', { className: 'text-2xl font-bold text-white mb-2' }, 'Leadership Goals & Milestones'),
+            e('p', { className: 'text-slate-400' }, 'Track organizational maturity targets and progress')
+          ),
+
+          // Timeline
+          e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-xl p-6 border border-slate-700' },
+            e('h3', { className: 'text-lg font-bold text-white mb-4' }, 'Organizational Maturity Journey'),
+            e('div', { className: 'text-xs text-slate-400 mb-4' }, 'Fiscal Year: Q1 = Apr-Jun, Q2 = Jul-Sep, Q3 = Oct-Dec, Q4 = Jan-Mar'),
+            // Timeline visualization
+            e('div', { className: 'relative mb-8' },
+              e('div', { className: 'absolute top-6 left-0 right-0 h-1 bg-slate-700' }),
+              e('div', { className: 'relative flex justify-between pt-2' },
+                e('div', { className: 'flex flex-col items-center' },
+                  e('div', { className: 'w-3 h-3 rounded-full bg-slate-600 border-2 border-slate-500 mb-2 z-10' }),
+                  e('div', { className: 'text-xs text-slate-400 text-center' }, 'Baseline'),
+                  e('div', { className: 'text-xs text-slate-500' }, formatFiscalQuarter('2026-01-14'))
+                ),
+                leadershipGoals.map(goal => {
+                  const goalDate = new Date(goal.date);
+                  const today = new Date();
+                  const isAchieved = today >= goalDate;
+                  // Check if goal is met
+                  let isMetNow = false;
+                  if (goal.targetPracticesAtLevel) {
+                    const practicesAtLevel = treemapData.filter(p => Math.round(p.avgCapability) >= goal.targetPracticesAtLevel.level).length;
+                    if (goal.targetPracticesAtLevel.count) {
+                      isMetNow = practicesAtLevel >= goal.targetPracticesAtLevel.count;
+                    } else if (goal.targetPracticesAtLevel.percentage) {
+                      isMetNow = (practicesAtLevel / practices.length) * 100 >= goal.targetPracticesAtLevel.percentage;
+                    }
+                  } else if (goal.targetMetric && goal.targetMetric.type === 'afd') {
+                    isMetNow = overallMetrics.avgAFD >= goal.targetMetric.value;
+                  }
+                  return e('div', { key: goal.id, className: 'flex flex-col items-center', style: { flex: 1 } },
+                    e('div', { className: 'w-4 h-4 rounded-full border-2 mb-2 z-10 ' + (isMetNow ? 'bg-green-500 border-green-400' : isAchieved ? 'bg-red-500 border-red-400' : 'bg-blue-500 border-blue-400') }),
+                    e('div', { className: 'text-xs font-semibold text-center ' + (isMetNow ? 'text-green-400' : isAchieved ? 'text-red-400' : 'text-blue-400') },
+                      isMetNow ? '' : formatFiscalQuarter(goal.date)),
+                    e('div', { className: 'text-xs text-slate-400 text-center' },
+                      goalDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }))
+                  );
+                })
+              )
+            ),
+
+            // Milestone details
+            e('div', { className: 'space-y-3' },
+              e('h4', { className: 'text-sm font-semibold text-slate-300 mb-2' }, 'Key Milestones'),
+              leadershipGoals.map(goal => {
+                const goalDate = new Date(goal.date);
+                const today = new Date();
+                const isPast = today >= goalDate;
+                let isMetNow = false;
+                if (goal.targetPracticesAtLevel) {
+                  const practicesAtLevel = treemapData.filter(p => Math.round(p.avgCapability) >= goal.targetPracticesAtLevel.level).length;
+                  if (goal.targetPracticesAtLevel.count) {
+                    isMetNow = practicesAtLevel >= goal.targetPracticesAtLevel.count;
+                  } else if (goal.targetPracticesAtLevel.percentage) {
+                    isMetNow = (practicesAtLevel / practices.length) * 100 >= goal.targetPracticesAtLevel.percentage;
+                  }
+                } else if (goal.targetMetric && goal.targetMetric.type === 'afd') {
+                  isMetNow = overallMetrics.avgAFD >= goal.targetMetric.value;
+                }
+                return e('div', {
+                  key: goal.id,
+                  className: 'p-3 rounded-lg border flex items-start gap-3 ' +
+                    (isMetNow ? 'bg-green-900/20 border-green-700/30' : isPast ? 'bg-red-900/20 border-red-700/30' : 'bg-slate-800/50 border-slate-700')
+                },
+                  e('div', { className: 'text-lg ' + (isMetNow ? 'text-green-400' : isPast ? 'text-red-400' : 'text-blue-400') },
+                    isMetNow ? '' : isPast ? '' : ''),
+                  e('div', { className: 'flex-1' },
+                    e('div', { className: 'text-sm font-semibold text-white mb-1' },
+                      formatFiscalQuarter(goal.date) + ' - ' + goalDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })),
+                    e('div', { className: 'text-xs text-slate-300' }, goal.description)
+                  ),
+                  e('div', { className: 'text-xs font-medium ' + (isMetNow ? 'text-green-400' : isPast ? 'text-red-400' : 'text-slate-400') },
+                    isMetNow ? 'Achieved' : isPast ? 'Missed' : 'Pending')
+                );
+              })
+            ),
+
+            // Progress stats
+            e('div', { className: 'mt-6 grid grid-cols-2 gap-4' },
+              e('div', { className: 'bg-slate-800/50 rounded-lg p-3' },
+                e('div', { className: 'text-xs text-slate-400' }, 'Goals On Track'),
+                e('div', { className: 'text-xl font-bold text-green-400' },
+                  leadershipGoals.filter(g => {
+                    let isMetNow = false;
+                    if (g.targetPracticesAtLevel) {
+                      const practicesAtLevel = treemapData.filter(p => Math.round(p.avgCapability) >= g.targetPracticesAtLevel.level).length;
+                      if (g.targetPracticesAtLevel.count) isMetNow = practicesAtLevel >= g.targetPracticesAtLevel.count;
+                      else if (g.targetPracticesAtLevel.percentage) isMetNow = (practicesAtLevel / practices.length) * 100 >= g.targetPracticesAtLevel.percentage;
+                    } else if (g.targetMetric && g.targetMetric.type === 'afd') isMetNow = overallMetrics.avgAFD >= g.targetMetric.value;
+                    return isMetNow;
+                  }).length + ' / ' + leadershipGoals.length)
+              ),
+              e('div', { className: 'bg-slate-800/50 rounded-lg p-3' },
+                e('div', { className: 'text-xs text-slate-400' }, 'Total Team Size'),
+                e('div', { className: 'text-xl font-bold text-blue-400' }, overallMetrics.totalTeamSize)
+              )
+            )
+          ),
+
+          // Capability Distribution
+          e('div', { className: 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-xl p-6 border border-slate-700' },
+            e('h3', { className: 'text-lg font-bold text-white mb-4' }, 'Capability Distribution'),
+            e('div', { className: 'space-y-2' },
+              [1, 2, 3, 4].map(level => {
+                const count = treemapData.filter(p => Math.round(p.avgCapability) === level).length;
+                const percentage = ((count / practices.length) * 100).toFixed(0);
+                return e('div', { key: level, className: 'flex items-center gap-3' },
+                  e('div', { className: 'text-xs text-slate-300 w-24' }, 'L' + level + ' ' + maturityLevels[level - 1].name + ':'),
+                  e('div', { className: 'flex-1 bg-slate-700 rounded-full h-2' },
+                    e('div', {
+                      className: 'h-2 rounded-full ' + (level === 1 ? 'bg-red-400' : level === 2 ? 'bg-yellow-400' : level === 3 ? 'bg-blue-400' : 'bg-cyan-400'),
+                      style: { width: percentage + '%' }
+                    })
+                  ),
+                  e('div', { className: 'text-xs text-slate-400 w-16' }, count + ' (' + percentage + '%)')
+                );
+              })
+            )
+          )
+        );
+      }
+    }
+
+    // Render the app
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(AIMaturityAssessment));
+  </script>
+</body>
+</html>
+
